@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visual Sudoku Solver</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f9f9f9;
+            color: #1a1a1a;
+        }
+
+        .serif-font {
+            font-family: 'Crimson Pro', serif;
+        }
+
+        .cell {
+            width: 50px;
+            height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+            transition: all 0.1s ease;
+            background: white;
+        }
+
+        @media (max-width: 640px) {
+            .cell {
+                width: 38px;
+                height: 38px;
+                font-size: 1.1rem;
+            }
+        }
+
+        .cell.original {
+            background: #f8fafc;
+            color: #000;
+            font-weight: 700;
+        }
+
+        .cell.solved {
+            background: #f0f9ff;
+            color: #0284c7;
+        }
+
+        .cell.current {
+            background: #fef9c3 !important;
+            color: #a16207;
+            z-index: 10;
+        }
+
+        .cell.backtrack {
+            background: #fff1f2 !important;
+            color: #e11d48;
+        }
+
+        .cell.propagation {
+            background: #ecfdf5;
+            color: #059669;
+        }
+
+        /* Bold Grid Lines */
+        .border-box-right {
+            border-right-width: 3px !important;
+            border-right-color: #000 !important;
+        }
+
+        .border-box-bottom {
+            border-bottom-width: 3px !important;
+            border-bottom-color: #000 !important;
+        }
+
+        .grid-container {
+            border: 3px solid #000;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
+        }
+
+        select, button {
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        button:active {
+            transform: scale(0.95);
+        }
+
+        .loading-dots:after {
+            content: '...';
+            animation: dots 1.5s steps(5, end) infinite;
+        }
+
+        @keyframes dots {
+            0%, 20% { content: ''; }
+            40% { content: '.'; }
+            60% { content: '..'; }
+            80%, 100% { content: '...'; }
+        }
+    </style>
+</head>
+<body class="p-4 md:p-12">
+    <div class="max-w-4xl mx-auto">
+        <!-- Header -->
+        <div class="text-center mb-8">
+            <h1 class="text-5xl md:text-7xl font-bold serif-font text-black mb-4 tracking-tight">Sudoku Solver</h1>
+            <p class="text-slate-500 font-medium uppercase tracking-widest text-xs">A Visualization</p>
+        </div>
+
+        <!-- Controls -->
+        <div class="flex flex-wrap gap-3 items-center justify-center mb-12">
+            <!-- Difficulty Selection -->
+            <div class="flex items-center gap-2 px-4 py-2 rounded-full border border-slate-300 bg-white">
+                <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Difficulty</label>
+                <select id="difficulty" class="bg-transparent text-sm font-semibold focus:outline-none cursor-pointer">
+                    <option value="easy">Easy</option>
+                    <option value="medium" selected>Medium</option>
+                    <option value="hard">Hard</option>
+                </select>
+            </div>
+
+            <!-- Speed Control -->
+            <div class="flex items-center gap-1 px-4 py-2 rounded-full border border-slate-300 bg-white">
+                <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Speed</label>
+                <select id="speed" class="bg-transparent text-sm font-semibold focus:outline-none cursor-pointer">
+                    <option value="200">Slow</option>
+                    <option value="50" selected>Normal</option>
+                    <option value="20">Fast</option>
+                    <option value="5">Turbo</option>
+                    <option value="0">Instant</option>
+                </select>
+            </div>
+
+            <!-- Buttons -->
+            <button id="newPuzzleBtn" onclick="fetchPuzzle()" class="px-8 py-2.5 bg-black text-white rounded-full font-bold text-sm hover:bg-slate-800 shadow-lg shadow-black/10">
+                New Puzzle
+            </button>
+            <button id="solveBtn" onclick="solvePuzzle()" disabled class="px-8 py-2.5 bg-black text-white rounded-full font-bold text-sm hover:bg-slate-800 disabled:opacity-20 disabled:cursor-not-allowed shadow-lg shadow-black/10">
+                Solve
+            </button>
+        </div>
+
+        <!-- Sudoku Grid -->
+        <div class="flex flex-col items-center">
+            <div id="grid" class="grid-container grid grid-cols-9 mx-auto w-fit bg-white">
+                <!-- Grid cells will be generated here -->
+            </div>
+
+            <!-- Stats -->
+            <div id="stats" class="mt-8 text-center text-[10px] font-bold uppercase tracking-widest text-slate-400 hidden">
+                <span id="currentStep" class="text-black">0</span> / <span id="totalSteps">0</span> STEPS PROCESSED
+            </div>
+
+            <!-- Status Message -->
+            <div id="status" class="mt-5 text-center font-semibold text-slate-600 max-w-md mx-auto min-h-[1.5rem]">
+                Select difficulty and click "New Puzzle" to begin
+            </div>
+        </div>
+
+        <!-- Legend -->
+        <div class="flex flex-wrap justify-center gap-x-8 gap-y-4 mt-10 pt-8 border-t border-slate-200">
+            <div class="flex items-center gap-2">
+                <div class="w-3 h-3 bg-slate-100 border border-slate-300 rounded-sm"></div>
+                <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Original</span>
+            </div>
+            <div class="flex items-center gap-2">
+                <div class="w-3 h-3 bg-emerald-50 border border-emerald-200 rounded-sm"></div>
+                <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Propagation</span>
+            </div>
+            <div class="flex items-center gap-2">
+                <div class="w-3 h-3 bg-sky-50 border border-sky-200 rounded-sm"></div>
+                <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Solved</span>
+            </div>
+            <div class="flex items-center gap-2">
+                <div class="w-3 h-3 bg-yellow-100 border border-yellow-200 rounded-sm"></div>
+                <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Current</span>
+            </div>
+            <div class="flex items-center gap-2">
+                <div class="w-3 h-3 bg-rose-50 border border-rose-200 rounded-sm"></div>
+                <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Backtrack</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentPuzzle = null;
+        let originalCells = new Set();
+        let animationTimeout = null;
+        let isAnimating = false;
+
+        // Initialize grid
+        function initGrid() {
+            const grid = document.getElementById('grid');
+            grid.innerHTML = '';
+
+            for (let row = 0; row < 9; row++) {
+                for (let col = 0; col < 9; col++) {
+                    const cell = document.createElement('div');
+                    cell.id = `cell-${row}-${col}`;
+                    cell.className = 'cell border border-slate-200';
+
+                    // Add thick borders for 3x3 boxes
+                    if (col === 2 || col === 5) {
+                        cell.classList.add('border-box-right');
+                    }
+                    if (row === 2 || row === 5) {
+                        cell.classList.add('border-box-bottom');
+                    }
+
+                    grid.appendChild(cell);
+                }
+            }
+        }
+
+        // Display puzzle on grid
+        function displayPuzzle(puzzleStr) {
+            originalCells.clear();
+
+            for (let i = 0; i < 81; i++) {
+                const row = Math.floor(i / 9);
+                const col = i % 9;
+                const cell = document.getElementById(`cell-${row}-${col}`);
+                const value = puzzleStr[i];
+
+                cell.className = 'cell border border-slate-200';
+
+                // Re-add box borders
+                if (col === 2 || col === 5) cell.classList.add('border-box-right');
+                if (row === 2 || row === 5) cell.classList.add('border-box-bottom');
+
+                if (value !== '0') {
+                    cell.textContent = value;
+                    cell.classList.add('original');
+                    originalCells.add(`${row}-${col}`);
+                } else {
+                    cell.textContent = '';
+                }
+            }
+        }
+
+        // Fetch puzzle from API
+        async function fetchPuzzle() {
+            const difficulty = document.getElementById('difficulty').value;
+            const status = document.getElementById('status');
+            const solveBtn = document.getElementById('solveBtn');
+            const newPuzzleBtn = document.getElementById('newPuzzleBtn');
+
+            stopAnimation();
+
+            status.innerHTML = 'Fetching puzzle<span class="loading-dots"></span>';
+            status.className = 'mt-6 text-center font-semibold text-slate-600';
+            newPuzzleBtn.disabled = true;
+            solveBtn.disabled = true;
+
+            try {
+                const response = await fetch(`/api/puzzle/${difficulty}/3`);
+                const data = await response.json();
+
+                if (data.success) {
+                    currentPuzzle = data.puzzle;
+                    displayPuzzle(currentPuzzle);
+                    status.textContent = `${difficulty.charAt(0).toUpperCase() + difficulty.slice(1)} puzzle loaded.`;
+                    status.className = 'mt-6 text-center font-semibold text-sky-600';
+                    solveBtn.disabled = false;
+                } else {
+                    status.textContent = `Error: ${data.error}`;
+                    status.className = 'mt-6 text-center font-semibold text-rose-600';
+                }
+            } catch (error) {
+                status.textContent = `Error: ${error.message}`;
+                status.className = 'mt-6 text-center font-semibold text-rose-600';
+            }
+
+            newPuzzleBtn.disabled = false;
+        }
+
+        // Stop animation
+        function stopAnimation() {
+            if (animationTimeout) {
+                clearTimeout(animationTimeout);
+                animationTimeout = null;
+            }
+            isAnimating = false;
+        }
+
+        // Solve puzzle
+        async function solvePuzzle() {
+            if (!currentPuzzle || isAnimating) return;
+
+            const status = document.getElementById('status');
+            const stats = document.getElementById('stats');
+            const solveBtn = document.getElementById('solveBtn');
+            const speed = parseInt(document.getElementById('speed').value);
+
+            status.innerHTML = 'Solving<span class="loading-dots"></span>';
+            status.className = 'mt-6 text-center font-semibold text-slate-600';
+            solveBtn.disabled = true;
+
+            try {
+                const response = await fetch('/api/solve', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ puzzle: currentPuzzle })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    stats.classList.remove('hidden');
+                    document.getElementById('totalSteps').textContent = data.steps.length;
+
+                    await animateSteps(data.steps, speed);
+
+                    status.textContent = `Completed in ${data.step_count} steps.`;
+                    status.className = 'mt-4 text-center font-semibold text-emerald-600';
+                } else {
+                    status.textContent = `No solution found.`;
+                    status.className = 'mt-4 text-center font-semibold text-rose-600';
+                }
+            } catch (error) {
+                status.textContent = `Error: ${error.message}`;
+                status.className = 'mt-4 text-center font-semibold text-rose-600';
+            }
+
+            solveBtn.disabled = false;
+        }
+
+        // Animate solving steps
+        function animateSteps(steps, speed) {
+            return new Promise((resolve) => {
+                isAnimating = true;
+                let currentStepIndex = 0;
+                let previousCell = null;
+
+                function animateStep() {
+                    if (currentStepIndex >= steps.length || !isAnimating) {
+                        isAnimating = false;
+                        if (previousCell) previousCell.classList.remove('current', 'backtrack');
+                        resolve();
+                        return;
+                    }
+
+                    const step = steps[currentStepIndex];
+                    const cell = document.getElementById(`cell-${step.row}-${step.col}`);
+
+                    if (previousCell) {
+                        previousCell.classList.remove('current', 'backtrack');
+                    }
+
+                    document.getElementById('currentStep').textContent = currentStepIndex + 1;
+
+                    if (step.action === 'place') {
+                        cell.textContent = step.value;
+                        cell.classList.remove('backtrack');
+                        cell.classList.add('current');
+
+                        if (step.type === 'propagation') {
+                            cell.classList.add('propagation');
+                        } else {
+                            cell.classList.add('solved');
+                        }
+                    } else if (step.action === 'backtrack') {
+                        cell.textContent = '';
+                        cell.classList.remove('solved', 'propagation');
+                        cell.classList.add('current', 'backtrack');
+                    }
+
+                    previousCell = cell;
+                    currentStepIndex++;
+
+                    if (speed === 0) {
+                        animateStep();
+                    } else {
+                        animationTimeout = setTimeout(animateStep, speed);
+                    }
+                }
+
+                animateStep();
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', initGrid);
+    </script>
+</body>
+</html>
